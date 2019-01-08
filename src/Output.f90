@@ -7,9 +7,6 @@
 !                                                                                                                      !
 !======================================================================================================================!
 !                                                                                                                      !
-!     Initiated:    Mar 2017                                                                                           !
-!     Last Update:  July 2018                                                                                           !
-!                                                                                                                      !
 !     Contact:      Rick D. Saylor, PhD                                                                                !
 !                   Physical Scientist                                                                                 !
 !                   U. S. Department of Commerce                                                                       !
@@ -170,6 +167,7 @@ subroutine SaveResults()
     ppfdout(i,nt)  = ppfd(i)
     cairout(i,nt)  = cair(i)
     h2oout(i,nt)   = h2o(i) 
+    rhout(i,nt)    = RelativeHumidity(tk(i), pmb(i), qh(i))
 
     ! canopy physics data
     ppfdsunout(i,nt) = ppfd_sun(i)
@@ -205,6 +203,16 @@ subroutine SaveResults()
   ppfddifout(nt) = ppfd_diffus
   nirdirout(nt)  = nir_direct
   nirdifout(nt)  = nir_diffus
+
+  ! soil physics data
+  vsh2oout(nt) = vsh2o
+  qsoilout(nt) = qsoil
+  effrhsoilout(nt) = effrhsoil
+  rbgout(nt) = rbg
+  gbgout(nt) = gbg
+  rsoilout(nt) = rsoil
+  tsoilkout(nt) = tsoilk
+  tk0out(nt) = tk0
 
   timeout(nt)=(t-tstart)/3600.0_dp     ! convert from seconds to hrs
 
@@ -265,6 +273,15 @@ subroutine PrintFinaltoFile()
   write(UOUT,fmt=f1) col1,(timeout(m),m=0,ntout-1)
   do i=1,npts
     write(UOUT,fmt=f2) 0.01*z(i),(qhout(i,m),m=0,ntout-1)
+  end do
+  close(UOUT)
+
+  ! output relative humidity profiles over simulation
+  ofname='./out/' // trim(simname) // '/met/rh.dat'
+  open(UOUT,file=ofname)
+  write(UOUT,fmt=f1) col1,(timeout(m),m=0,ntout-1)
+  do i=1,npts
+    write(UOUT,fmt=f2) 0.01*z(i),(rhout(i,m),m=0,ntout-1)
   end do
   close(UOUT)
 
@@ -340,6 +357,86 @@ subroutine PrintFinaltoFile()
   write(UOUT,1000) trim(hdr)
   do m=0,ntout-1
     write(UOUT,1001) timeout(m), ra(m)
+  end do
+  close(UOUT)
+
+  ! output vsh2o exchange coeffients over simulation
+  ofname='./out/' // trim(simname) // '/soil/vsh2o.dat'
+  open(UOUT,file=ofname)
+  hdr = ' hr         vsh2o(cm/s)'
+  write(UOUT,1000) trim(hdr)
+  do m=0,ntout-1
+    write(UOUT,1001) timeout(m), vsh2oout(m)
+  end do
+  close(UOUT)
+
+  ! output qsoil values over simulation
+  ofname='./out/' // trim(simname) // '/soil/qsoil.dat'
+  open(UOUT,file=ofname)
+  hdr = ' hr         qsoil(mol/cm3)'
+  write(UOUT,1000) trim(hdr)
+  do m=0,ntout-1
+    write(UOUT,1001) timeout(m), qsoilout(m)
+  end do
+  close(UOUT)
+
+  ! output effrhsoil over simulation
+  ofname='./out/' // trim(simname) // '/soil/effrhsoil.dat'
+  open(UOUT,file=ofname)
+  hdr = ' hr         effrhsoil'
+  write(UOUT,1000) trim(hdr)
+  do m=0,ntout-1
+    write(UOUT,1001) timeout(m), effrhsoilout(m)
+  end do
+  close(UOUT)
+
+  ! output rbg over simulation
+  ofname='./out/' // trim(simname) // '/soil/rbg.dat'
+  open(UOUT,file=ofname)
+  hdr = ' hr         rbg(s/cm)'
+  write(UOUT,1000) trim(hdr)
+  do m=0,ntout-1
+    write(UOUT,1001) timeout(m), rbgout(m)
+  end do
+  close(UOUT)
+
+  ! output gbg over simulation
+  ofname='./out/' // trim(simname) // '/soil/gbg.dat'
+  open(UOUT,file=ofname)
+  hdr = ' hr         gbg(mol/m2-s)'
+  write(UOUT,1000) trim(hdr)
+  do m=0,ntout-1
+    write(UOUT,1001) timeout(m), gbgout(m)
+  end do
+  close(UOUT)
+
+  ! output rsoil over simulation
+  ofname='./out/' // trim(simname) // '/soil/rsoil.dat'
+  open(UOUT,file=ofname)
+  hdr = ' hr         rsoil(s/cm)'
+  write(UOUT,1000) trim(hdr)
+  do m=0,ntout-1
+    write(UOUT,1001) timeout(m), rsoilout(m)
+  end do
+  close(UOUT)
+
+  ! output tsoilk over simulation
+  ofname='./out/' // trim(simname) // '/soil/tsoilk.dat'
+  open(UOUT,file=ofname)
+  hdr = ' hr         tsoilk(K)'
+  write(UOUT,1000) trim(hdr)
+  do m=0,ntout-1
+    write(UOUT,1001) timeout(m), tsoilkout(m)
+  end do
+  close(UOUT)
+
+  ! output tk0 over simulation
+  ofname='./out/' // trim(simname) // '/soil/tk0.dat'
+  open(UOUT,file=ofname)
+  hdr = ' hr         tk0(K)'
+  write(UOUT,1000) trim(hdr)
+  do m=0,ntout-1
+    write(UOUT,1001) timeout(m), tk0out(m)
   end do
   close(UOUT)
 

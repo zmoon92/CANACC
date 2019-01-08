@@ -7,9 +7,6 @@
 !                                                                                                                      !
 !======================================================================================================================!
 !                                                                                                                      !
-!     Initiated:    Mar 2017                                                                                           !
-!     Last Update:  July 2018                                                                                          !
-!                                                                                                                      !
 !     Contact:      Rick D. Saylor, PhD                                                                                !
 !                   Physical Scientist                                                                                 !
 !                   U. S. Department of Commerce                                                                       !
@@ -112,6 +109,7 @@ subroutine InitializeModel()
   allocate(ppfdout(npts,0:ntout-1))
   allocate(cairout(npts,0:ntout-1))
   allocate(h2oout(npts,0:ntout-1))
+  allocate(rhout(npts,0:ntout-1))
 
   allocate(ppfddirout(0:ntout-1))
   allocate(ppfddifout(0:ntout-1))
@@ -146,6 +144,15 @@ subroutine InitializeModel()
   allocate(anetshdout(npts,0:ntout-1))
   allocate(anetwgtout(npts,0:ntout-1))
 
+  allocate(vsh2oout(0:ntout-1))
+  allocate(qsoilout(0:ntout-1))
+  allocate(effrhsoilout(0:ntout-1))
+  allocate(rbgout(0:ntout-1))
+  allocate(gbgout(0:ntout-1))
+  allocate(rsoilout(0:ntout-1))
+  allocate(tsoilkout(0:ntout-1))
+  allocate(tk0out(0:ntout-1))
+
   allocate(timeout(0:ntout-1))
   allocate(sdtout(0:ntout-1))
 
@@ -162,6 +169,7 @@ subroutine InitializeModel()
   ppfdout=0.0_dp
   cairout=0.0_dp
   h2oout=0.0_dp
+  rhout=0.0_dp
   ppfdsunout=0.0_dp
   ppfdshdout=0.0_dp
   nirsunout=0.0_dp
@@ -182,6 +190,13 @@ subroutine InitializeModel()
   rsshdout=0.0_dp
   anetsunout=0.0_dp
   anetshdout=0.0_dp
+
+  vsh2oout=0.0_dp
+  qsoilout=0.0_dp
+  effrhsoilout=0.0_dp
+  rbgout=0.0_dp
+  gbgout=0.0_dp
+  rsoilout=0.0_dp
 
   ! read z values of vertical grid
   call ReadVerticalGridData()
@@ -332,6 +347,8 @@ subroutine SetSimulationData()
     call system(strmkdir)
     strmkdir = 'mkdir ./out/' // trim(simname) // '/canopy'
     call system(strmkdir)
+    strmkdir = 'mkdir ./out/' // trim(simname) // '/soil'
+    call system(strmkdir)
   end if
 
   ! open simulation runtime file to capture STDOUT
@@ -442,6 +459,7 @@ subroutine GetSoilData()
   sattheta = xsattheta(isoiltype)
   rtheta   = xrtheta(isoiltype)
   sbcoef   = xsbcoef(isoiltype)
+  satphi   = xsatphi(isoiltype)
 
   return
 end subroutine GetSoilData

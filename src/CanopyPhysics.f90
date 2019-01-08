@@ -15,9 +15,6 @@
 !                                                                                                                      !
 !======================================================================================================================!
 !                                                                                                                      !
-!     Initiated:    May 2014                                                                                           !
-!     Last Update:  July 2018                                                                                          !
-!                                                                                                                      !
 !     Contact:      Rick D. Saylor, PhD                                                                                !
 !                   Physical Scientist                                                                                 !
 !                   U. S. Department of Commerce                                                                       !
@@ -48,7 +45,8 @@ module CanopyPhysics
           SurfaceAirTemp, CalcOneLevelLEB, LeafTemp, LeafTemp1, LeafTemp2, LeafBalEq, gh_cn, gv_cn, gb_cn, &
           gs_medlyn, NetPhoto, kbe
   public CalcCanopyPhysics, PartitionRAD, CalcRadProfiles, CalcWeightedProfiles, &
-         rbgl, rsoill, rbl, rw_massad, rw_flechard, rs_zhang_nh3, rs_zhang, rs_rds, &
+         SoilMatricPotential, SoilAlpha, SoilRbg, SoilResist, &
+         rbl, rw_massad, rw_flechard, rs_zhang_nh3, rs_zhang, rs_rds, &
          rs_jarvis1, rs_jarvis2, rs_jim, rs_nmj, rincl, gpl, gpstl, gpgl
 
 contains
@@ -207,7 +205,6 @@ subroutine IntegrateTempAir(tin, tout)
   real(kind=dp), intent(in) :: tin, tout
   real(kind=dp)             :: ts         ! current integration time [tin, tout]                  
   real(kind=dp)             :: dtphys     ! integration time step (sec)
-  real(kind=dp)             :: tk0        ! lower boundary condition for Tair derived from surface energy balance (K)
   real(kind=dp)             :: rcp        ! rho*cpair (moles/m3)*(J/mole-K)
   real(kind=dp), dimension(npts) :: phitk    ! new solution array
   real(kind=dp), dimension(npts) :: phitkp   ! previous solution array
@@ -218,7 +215,7 @@ subroutine IntegrateTempAir(tin, tout)
   ts = tin
   dtphys = 1.0_dp
 
-  tk0 = SurfaceAirTemp()
+  tk0 = SurfaceAirTemp()     ! lower boundary condition for Tair derived from surface energy balance (K)
 
   ! integration over tin -> tout
   do
@@ -297,9 +294,10 @@ end function CanopyPhysConverged
 !**********************************************************************************************************************!
 ! subroutine CalcSoilExchangeParams - calculations parameters for exchange of water vapor with soil surface
 !
-! Uses formulation of ...
-!    Pleim et al. (2013) JGR, 118, 3794-3806.
+! Uses formulation as derived from ...
+!    Sakaguchi & Zeng (2009) JGR,  D01107, doi:10.1029/2008JD010834.
 !    Schuepp (1977) BLM, 12, 171-186.
+!    Philip (1957) J. of Met., 14, 354-366.
 !
 ! With data from ...
 !    Rawls et al. (1982) Trans. ASAE, 25, 1316-1320.
@@ -309,40 +307,108 @@ end function CanopyPhysConverged
 subroutine CalcSoilExchangeParams()
   real(kind=dp)              :: fsat           ! fractional soil saturation
   real(kind=dp)              :: mdiff          ! molecular diffusivity of water vapor (cm2/s)
-  real(kind=dp), parameter   :: viscair=0.155  ! dynamic viscosity of air (cm2/s)
-  real(kind=dp)              :: ugstar, del0 
-  real(kind=dp)              :: ldry, mdiffp, xe
+  real(kind=dp)              :: phi            ! tmp variable for soil matric potential (suction)
+  integer(kind=i4)           :: rbgselect      ! option for calculation of rbg
 
   ! soil thermal conductivity
   fsat = (stheta-rtheta)/(sattheta-rtheta)
   ksoil = ksoildry(isoiltype) + (ksoilwet(isoiltype)-ksoildry(isoiltype))*fsat
 
   ! surface molar water vapor concentration (moles/cm3)
-  qsoil = hsoil*qsat(tsoilk)
+  phi = SoilMatricPotential(stheta)
+  effrhsoil = SoilAlpha(phi, tsoilk)
+  qsoil = effrhsoil*qsat(tsoilk)
 
   ! ground boundary layer resistance (s/cm)
-  mdiff=mdiffh2o(tsoilk, pmb(1))
-  ugstar = 0.05*ubar(ncnpy+1)+0.00005*ubar(ncnpy+1)*ubar(ncnpy+1) 
-  del0 = viscair/(0.4*ugstar)
-  rbg = ((viscair/mdiff)-dlog(del0/10.0))/(0.4*ugstar)
+  rbgselect = 2 
+  if (rbgselect == 1) then
+    rbg = SoilRbg(ubar(ncnpy+1))                 ! Schuepp (1977)
+  else
+    rbg = gtor(gaero(nt), pmb(1), tk(1))*0.01    ! Bonan (2016)
+  end if
 
   ! Note:  These are the correct units needed in SurfaceAirTemp!
-  ! ground aerodynamic conductance (mol/m2-s) as in Bonan (2016)
-  ! gaero is calculated in EnvironData
-  gbg = gaero(nt)
+  !        mol/m2-s
+  gbg = rtog(rbg*100., pmb(1), tk(1))   ! convert resistance to conductance
 
   ! soil diffusion resistance (s/cm)
-  xe =(1.0-(stheta/sattheta))**5.0
-  ldry = dsoil*(dexp(xe)-1.0)/1.7183
-  mdiffp = mdiff*sattheta*sattheta*(1.0-(rtheta/sattheta))**(2.0+3.0/sbcoef)
-  rsoil = ldry/mdiffp
+  mdiff = mdiffh2o(tsoilk, pmb(1))
+  rsoil = SoilResist(mdiff)
 
-  ! deposition velocity to ground surface (cm/s)
-  vsh2o = 1.0/(ra(nt)+rsoil)       
+  ! exchange velocity with ground surface (cm/s)
+  vsh2o = 1.0/(rbg+rsoil)       
 
   return
 
 end subroutine CalcSoilExchangeParams
+
+!**********************************************************************************************************************!
+! function SoilMatricPotential - for a given soil type and near surface volumetric water content, calculates
+!                                the absolute value of the soil matric potential based on the relationships
+!                                of Clapp and Hornberger (1978) Water Resources Res., 14, 601-604.
+!**********************************************************************************************************************!
+function SoilMatricPotential(soilwc)
+  real(kind=dp), intent(in)    :: soilwc                ! soil volumetric water content (m3/m3)
+  real(kind=dp)                :: SoilMatricPotential   ! absolute value of soil matric potential (m)
+  real(kind=dp)                :: w                     ! soil wetness (actual wc/saturated wc) 
+
+  ! soil wetness
+  w = soilwc/sattheta
+
+  ! matric potential (suction) calculated from Eq (1) of Clapp and Hornberger (1978)
+  SoilMatricPotential = satphi*(w**(-sbcoef))*0.01   ! convert from cm (satphi) to m
+
+end function SoilMatricPotential
+
+!**********************************************************************************************************************!
+! function SoilAlpha - given the absolute value of the soil matric potential and the soil temperature, calculates
+!                      the effective soil relative humidity fraction (alpha), based on
+!                      Philip (1957) Journal of Meteorology, 14, 354-366.
+!**********************************************************************************************************************!
+function SoilAlpha(phi, tsk)
+  real(kind=dp), intent(in)    :: phi          ! absolute value of soil matric potential (m)
+  real(kind=dp), intent(in)    :: tsk          ! soil temperature (K)
+  real(kind=dp)                :: SoilAlpha    ! effective soil relative humidity fraction
+
+  SoilAlpha = dexp(-9.8*phi/(461.9*tsk))
+
+end function SoilAlpha
+
+!**********************************************************************************************************************!
+! function SoilRbg - calculates the boundary layer resistance at the ground surface, Rbg, based on
+!                    Schuepp (1977) Boundary-Layer Meteorology, 12, 171-186.
+!**********************************************************************************************************************!
+function SoilRbg(ubarg)
+  real(kind=dp), intent(in)    :: ubarg        ! mean wind speed in first model level (cm/s)
+  real(kind=dp)                :: SoilRbg      ! boundary layer resistance at ground surface (s/cm)
+  real(kind=dp), parameter     :: rbgmax=1.67  ! maximum ground surface boundary layer resistance (s/cm)
+  real(kind=dp)                :: rbg          ! tmp variable for boundary layer resistance (s/cm)
+
+  rbg = 11.534/(0.13*ubarg)    ! assumes Sc=0.7, del0/zl = 0.02 and ustar=0.13*ubar (Weber, 1999)
+  SoilRbg = min(rbgmax, rbg)
+
+end function SoilRbg
+
+!**********************************************************************************************************************!
+! function SoilResist - calculates the resistance to diffusion of a species from the free water surface in the soil
+!                       to the soil-atmosphere interface, Rsoil, based on Sakaguchi & Zeng (2009) JGR, 114, D01107,
+!                       doi:10.1029/2008JD010834.
+!**********************************************************************************************************************!
+function SoilResist(mdiffl)
+  real(kind=dp), intent(in)    :: mdiffl       ! molecular diffusivity of species in air (cm2/s)
+  real(kind=dp)                :: SoilResist   ! soil resistance (s/cm)
+  real(kind=dp)                :: xe           ! tmp variable
+  real(kind=dp)                :: ldry         ! diffusion distance through the soil (cm)
+  real(kind=dp)                :: mdiffp       ! effective diffusivity of species through the soil (cm2/s)
+
+  xe =(1.0-(stheta/sattheta))**5.0
+  ldry = dsoil*(dexp(xe)-1.0)/1.7183
+  ldry = max(0.0, ldry)
+
+  mdiffp = mdiffl*sattheta*sattheta*(1.0-(rtheta/sattheta))**(2.0+3.0/sbcoef)
+  SoilResist = ldry/mdiffp
+
+end function SoilResist
 
 !**********************************************************************************************************************!
 ! function SurfaceAirTemp - provides the lower (i.e., ground surface) boundary condition for integration of 
@@ -669,7 +735,9 @@ function NetPhoto(tleaf, cci, ppfd)
   real(kind=dp)              :: kc               ! Michaelis constant for CO2, umol/mol
   real(kind=dp)              :: k0               ! inhibition constant for O2, umol/mol
   real(kind=dp), parameter   :: tau25=2600.      ! CO2/O2 specificity ratio @ 25degC, mmol/mmol
-  real(kind=dp), parameter   :: vm25=100.0       ! max Rubisco capacity per unit leaf area @25degC, umol/m2-s
+  real(kind=dp), parameter   :: vm25=54.0        ! max Rubisco capacity per unit leaf area @25degC, umol/m2-s
+                                                 ! from: Houborg et al. (2009) Ag. & Forest Met., 149, 1875-1895.
+                                                 !        Temperate deciduous forest
   real(kind=dp), parameter   :: kc25=300.        ! Michaelis constant for CO2 @ 25degC, umol/mol
   real(kind=dp), parameter   :: k025=300000.     ! inhibition constant for O2 @ 25degC, umol/mol
   real(kind=dp), parameter   :: coa=210000.      ! oxygen mole fraction, umol/mol          
@@ -1079,61 +1147,6 @@ subroutine CalcWeightedProfiles()
 
   return
 end subroutine CalcWeightedProfiles
-
-!**********************************************************************************************************************!
-! function rbgl - calculate surface boundary layer resistance
-!
-! Uses formulation of ...
-!    Schuepp (1977) BLM, 12, 171-186.
-!
-!**********************************************************************************************************************!
-function rbgl(mdiffl, ubarh)
-  real(kind=dp)             :: rbgl           ! surface boundary layer resistance
-                                              ! (s/cm)
-  real(kind=dp), intent(in) :: mdiffl         ! molecular diffusivity of species 
-                                              ! in air (cm2/s)
-  real(kind=dp), intent(in) :: ubarh          ! mean wind speed at canopy top
-                                              ! (cm/s)
-  real(kind=dp), parameter  :: viscair=0.155  ! dynamic viscosity of air (cm2/s)
-  real(kind=dp)             :: ugstar, del0 
-
-  ugstar = 0.05*ubarh+0.00005*ubarh*ubarh 
-  del0 = viscair/(0.4*ugstar)
-  rbgl = ((viscair/mdiffl)-dlog(del0/10.0))/(0.4*ugstar)
-  !print *, 'ubarh, mdiffl, rbgl=', ubarh, mdiffl, rbgl
-  return
-end function rbgl
-
-!**********************************************************************************************************************!
-! function rsoill - calculate resistance to diffusion through the soil
-!
-! Uses formulation of ...
-!    Pleim et al. (2013) JGR, 118, 3794-3806.
-!
-! With data from ...
-!    Rawls et al. (1982) Trans. ASAE, 25, 1316-1320.
-!    Clapp and Hornberger (1978) Water Resources Res., 14, 601-604.
-!
-!**********************************************************************************************************************!
-function rsoill(mdiffl, stheta, sattheta, rtheta, sbcoef, dsoil)
-  real(kind=dp)             :: rsoill     ! resistance to diffusion 
-                                          ! through the soil (s/cm)
-  real(kind=dp), intent(in) :: mdiffl     ! molecular diffusivity of species in air (cm2/s)
-  real(kind=dp), intent(in) :: stheta     ! volumetric soil water content (m3/m3) 
-  real(kind=dp), intent(in) :: sattheta   ! saturation volumetric soil water content (m3/m3)
-  real(kind=dp), intent(in) :: rtheta     ! residual volumetric soil water content (m3/m3)
-  real(kind=dp), intent(in) :: sbcoef     ! Clapp and Hornberger exponent
-  real(kind=dp), intent(in) :: dsoil      ! depth of topsoil (cm)
-  real(kind=dp)             :: ldry
-  real(kind=dp)             :: mdiffp
-  real(kind=dp)             :: xe
-
-  xe =(1.0-(stheta/sattheta))**5.0
-  ldry = dsoil*(dexp(xe)-1.0)/1.7183
-  mdiffp = mdiffl*sattheta*sattheta*(1.0-(rtheta/sattheta))**(2.0+3.0/sbcoef)
-  rsoill = ldry/mdiffp
-  return
-end function rsoill
 
 !**********************************************************************************************************************!
 ! function rbl - calculate leaf boundary resistance for trace species

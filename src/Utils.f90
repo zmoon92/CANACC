@@ -7,9 +7,6 @@
 !                                                                                                                      !
 !======================================================================================================================!
 !                                                                                                                      !
-!     Initiated:    Mar 2017                                                                                           !
-!     Last Update:  July 2018                                                                                          !
-!                                                                                                                      !
 !     Contact:      Rick D. Saylor, PhD                                                                                !
 !                   Physical Scientist                                                                                 !
 !                   U. S. Department of Commerce                                                                       !
@@ -96,6 +93,7 @@ subroutine CleanUp()
   deallocate(ppfdout)
   deallocate(cairout)
   deallocate(h2oout)
+  deallocate(rhout)
 
   deallocate(ppfddirout)
   deallocate(ppfddifout)
@@ -130,6 +128,15 @@ subroutine CleanUp()
   deallocate(anetshdout)
   deallocate(anetwgtout)
 
+  deallocate(vsh2oout)
+  deallocate(effrhsoilout)
+  deallocate(rbgout)
+  deallocate(gbgout)
+  deallocate(rsoilout)
+  deallocate(qsoilout)
+  deallocate(tsoilkout)
+  deallocate(tk0out)
+
   deallocate(timeout)
   deallocate(sdtout)
 
@@ -159,7 +166,7 @@ function rtog(rz, pmbi, tki)
   real(kind=dp)              :: rtog              ! conductance, mol/m2-s
   real(kind=dp), parameter   :: rgas=8.205D-05    ! ideal gas constant, m3-atm/K-mol
 
-  rm2smol = rz*(pmbi/1013.)/(rgas*tki)
+  rm2smol = rz*(rgas*tki)/(pmbi/1013.)
   rtog = 1.0/rm2smol
 
   return
@@ -179,7 +186,7 @@ function gtor(gz, pmbi, tki)
   real(kind=dp)              :: gms               ! conductance, m/s
   real(kind=dp), parameter   :: rgas=8.205D-05    ! ideal gas constant, m3-atm/K-mol
 
-  gms = gz*rgas*tki/(pmbi/1013.)
+  gms = gz*(rgas*tki)/(pmbi/1013.)
   gtor = 1.0/gms
 
   return
@@ -253,11 +260,13 @@ function RelativeHumidity(tki, pmbi, qhi)
   real(kind=dp), intent(in) :: qhi
   real(kind=dp)             :: RelativeHumidity
   real(kind=dp)             :: e, es, qhd, pkpa, rhi
+  real(kind=dp), parameter  :: rhmin=0.1
+  real(kind=dp), parameter  :: rhmax=99.0
   qhd=0.001*qhi
   pkpa=0.1*pmbi
   e = pkpa*qhd/(0.622+qhd)
   es = esat(tki)
-  rhi = max(0.0, min(100.0, 100.0*e/es))   ! bound RH to 0.0-100.0
+  rhi = max(rhmin, min(rhmax, 100.0*e/es))   ! bound RH to (rhmin, rhmax)
   RelativeHumidity = rhi
   return 
 end function RelativeHumidity
