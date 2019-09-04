@@ -1124,6 +1124,27 @@ subroutine CalcRadProfiles()
 end subroutine CalcRadProfiles
 
 !**********************************************************************************************************************!
+! ReadRadProfiles - instead of calculating, read in-canopy ppfd and nir profiles from file
+! i.e., these variables:
+! - ppfd_sun, ppfd_shd, nir_sun, nir_shd, fsun, fshd, 
+! - rt_sun, rt_shd
+!
+! They will be in separate text files, height and time dimension table
+!
+! As in CalcRadProfiles, these will still be calculated here:
+! - lw_up, lw_dn, 
+! - ppfd_wgt, nir_wgt, rt_wgt (ppfd+nir), rabs_wgt (ppfd+nir+tir)
+!
+!**********************************************************************************************************************!
+subroutine ReadRadProfiles()
+
+
+
+end subroutine ReadRadProfiles
+
+
+
+!**********************************************************************************************************************!
 ! CalcWeightedProfiles - calculate sun/shade weighted canopy profiles
 !
 !**********************************************************************************************************************!
